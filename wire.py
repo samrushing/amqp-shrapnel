@@ -145,6 +145,4 @@ def pack_table (d):
         else:
             raise ValueError ("don't know how to pack a %r yet" % (v.__class__,))
     data = ''.join (r)
-    r = struct.pack ('>L', len(data)) + data
-    W ('pft: %r\n' % (r,))
-    return r
+    return struct.pack ('>L', len(data)) + data
