@@ -67,8 +67,8 @@ class amqp_client:
             coro.spawn (self.recv_loop)
             # pull the first frame off (should be connection.start)
             ftype, channel, frame = self.expect_frame (spec.FRAME_METHOD, 'connection.start')
-            W ('connection start\n')
-            dump_ob (frame)
+            #W ('connection start\n')
+            #dump_ob (frame)
             mechanisms = frame.mechanisms.split()
             if 'PLAIN' in mechanisms:
                 response = '\x00%s\x00%s' % self.auth
@@ -100,8 +100,8 @@ class amqp_client:
     def expect_frame (self, ftype, *names):
         ftype, channel, frame = self.frames.pop()
         if frame._name not in names:
-            W ('unexpected frame:\n')
-            dump_ob (frame)
+            #W ('unexpected frame:\n')
+            #dump_ob (frame)
             raise ProtocolError ("expected %r frame, got %r" % (names, frame._name))
         else:
             return ftype, channel, frame
@@ -111,7 +111,7 @@ class amqp_client:
             while len (self.buffer):
                 self.unpack_frame()
             block = self.s.recv (self.buffer_size)
-            W ('recv_loop: %d bytes\n' % (len(block),))
+            #W ('recv_loop: %d bytes\n' % (len(block),))
             if not block:
                 break
             else:
@@ -121,7 +121,7 @@ class amqp_client:
     def unpack_frame (self):
         # unpack the frame sitting in self.buffer
         ftype, chan, size = struct.unpack ('>BHL', self.buffer[:7])
-        W ('<<< frame: ftype=%r channel=%r size=%d\n' % (ftype, chan, size))
+        #W ('<<< frame: ftype=%r channel=%r size=%d\n' % (ftype, chan, size))
         if ftype > 4:
             self.close()
             raise ProtocolError ("invalid type in frame: %r" % (ftype,))
@@ -147,8 +147,8 @@ class amqp_client:
             cm_id = struct.unpack ('>hh', payload[:4])
             ob = spec.method_map[cm_id]()
             ob.unpack (payload, 4)
-            W ('<<< ')
-            dump_ob (ob)
+            #W ('<<< ')
+            #dump_ob (ob)
             # catch asynchronous stuff here and ship it out...
             if is_a (ob, spec.basic.deliver):
                 probe = self.consumers.get ((chan, ob.consumer_tag), None)
@@ -160,11 +160,11 @@ class amqp_client:
                 self.frames.push ((ftype, chan, ob))
         elif ftype == spec.FRAME_HEADER:
             cid, weight, size, flags = struct.unpack ('>hhqh', payload[:14])
-            W ('<<< HEADER: cid=%d weight=%d size=%d flags=%x payload=%r\n' % (cid, weight, size, flags, payload))
-            W ('<<< self.buffer=%r\n' % (self.buffer,))
+            #W ('<<< HEADER: cid=%d weight=%d size=%d flags=%x payload=%r\n' % (cid, weight, size, flags, payload))
+            #W ('<<< self.buffer=%r\n' % (self.buffer,))
             self.remain = size
         elif ftype == spec.FRAME_BODY:
-            W ('<<< FRAME_BODY, len(payload)=%d\n' % (len(payload),))
+            #W ('<<< FRAME_BODY, len(payload)=%d\n' % (len(payload),))
             self.remain -= len (payload)
             self.body.append (payload)
             if self.remain == 0:
@@ -188,7 +188,7 @@ class amqp_client:
             raise ProtocolError ("unhandled frame type: %r" % (ftype,))
         frame = struct.pack ('>BHL', ftype, channel, len (payload)) + payload + chr(spec.FRAME_END)
         r = self.s.send (frame)
-        W ('send_frame: %r %d\n' % (frame, r))
+        #W ('send_frame: %r %d\n' % (frame, r))
 
     def close (self, reply_code, reply_text, class_id, method_id):
         self.send_frame (
