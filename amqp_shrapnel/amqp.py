@@ -21,7 +21,7 @@ def dump_ob (ob):
         W ('  %s = %r\n' % (name, getattr (ob, name)))
     W ('}\n')
 
-class amqp_client:
+class client:
 
     version = [0,0,9,1]
     buffer_size = 4000
@@ -286,18 +286,3 @@ class channel:
         chunk = self.conn.tune.frame_max
         for i in range (0, size, chunk):
             self.send_frame (spec.FRAME_BODY, payload[i:i+chunk])
-
-def t0():
-    ch = c.channel()
-    ch.exchange_declare (exchange='ething')
-    ch.queue_declare (queue='qthing', passive=False, durable=False)
-    ch.queue_bind (exchange='ething', queue='qthing', routing_key='notification')
-    fifo = ch.basic_consume (queue='qthing')
-    return ch, fifo
-
-if __name__ == '__main__':
-    import coro.backdoor
-    c = amqp_client (('guest', 'guest'), '127.0.0.1')
-    coro.spawn (c.go)
-    coro.spawn (coro.backdoor.serve, unix_path='/tmp/amqp.bd')
-    coro.event_loop()
