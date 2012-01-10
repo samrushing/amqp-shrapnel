@@ -23,6 +23,12 @@ I plan to rewrite the wire codec in Cython_, and then have the code
 generator also generate Cython.  Combined with the high performance of
 shrapnel itself, this should fairly scream.
 
+Help
+----
+
+No documentation yet, see the files in the test directory for clues on
+how to use this library.
+
 .. _Cython: http://cython.org/
 .. _Shrapnel: http://github.com/ironport/shrapnel/
 .. _AMQP: http://en.wikipedia.org/wiki/Advanced_Message_Queuing_Protocol
