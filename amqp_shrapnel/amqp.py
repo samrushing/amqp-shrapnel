@@ -70,6 +70,7 @@ class client:
             #W ('connection start\n')
             #dump_ob (frame)
             mechanisms = frame.mechanisms.split()
+            self.server_properties = frame.server_properties
             if 'PLAIN' in mechanisms:
                 response = '\x00%s\x00%s' % self.auth
             else:
@@ -286,3 +287,21 @@ class channel:
         chunk = self.conn.tune.frame_max
         for i in range (0, size, chunk):
             self.send_frame (spec.FRAME_BODY, payload[i:i+chunk])
+
+    # rabbit mq extension
+    def confirm_select (self, nowait=False):
+        try:
+            if self.conn.server_properties['capabilities']['publisher_confirms'] != True:
+                raise ProtocolError ("server capabilities says NO to publisher_confirms")
+        except KeyError:
+                raise ProtocolError ("server capabilities says NO to publisher_confirms")
+        else:
+            frame = spec.confirm.select (nowait)
+            self.send_frame (spec.FRAME_METHOD, frame)
+            if not nowait:
+                ftype, channel, frame = self.conn.expect_frame (spec.FRAME_METHOD, 'confirm.select_ok')
+            return frame
+
+    def get_ack (self):
+        ftype, channel, frame = self.conn.expect_frame (spec.FRAME_METHOD, 'basic.ack')
+        return frame
