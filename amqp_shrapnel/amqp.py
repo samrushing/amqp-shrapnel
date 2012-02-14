@@ -21,6 +21,9 @@ def dump_ob (ob):
         W ('  %s = %r\n' % (name, getattr (ob, name)))
     W ('}\n')
 
+# sentinel for consumer fifos
+connection_closed = 'connection closed'
+
 class client:
 
     version = [0,0,9,1]
@@ -36,6 +39,7 @@ class client:
         # collect body parts here.  heh.
         self.body = []
         self.next_content_consumer = None
+        self.next_properties = None
         self.consumers = {}
 
     # state diagram for connection objects:
@@ -108,16 +112,19 @@ class client:
             return ftype, channel, frame
 
     def recv_loop (self):
-        while 1:
-            while len (self.buffer):
-                self.unpack_frame()
-            block = self.s.recv (self.buffer_size)
-            #W ('recv_loop: %d bytes\n' % (len(block),))
-            if not block:
-                break
-            else:
-                self.buffer += block
-        self.s.close()
+        try:
+            while 1:
+                while len (self.buffer):
+                    self.unpack_frame()
+                block = self.s.recv (self.buffer_size)
+                #W ('recv_loop: %d bytes\n' % (len(block),))
+                if not block:
+                    break
+                else:
+                    self.buffer += block
+        finally:
+            self.notify_consumers_of_close()
+            self.s.close()
 
     def unpack_frame (self):
         # unpack the frame sitting in self.buffer
@@ -154,15 +161,24 @@ class client:
             if is_a (ob, spec.basic.deliver):
                 probe = self.consumers.get ((chan, ob.consumer_tag), None)
                 if probe is None:
-                    W ('warning, dropping unexpected data for chan=%d consumer_tag=%r\n' % (chan, ob.consumer_tag,))
-                    pp (self.consumers)
-                self.next_content_consumer = probe
+                    # XXX useful for catching deliveries from previous sessions...
+                    probe = self.consumers.get (chan, None)
+                    if probe is None:
+                        W ('warning, dropping unexpected data for chan=%d consumer_tag=%r\n' % (chan, ob.consumer_tag,))
+                    else:
+                        self.next_content_consumer = (ob, probe)
+                else:
+                    self.next_content_consumer = (ob, probe)
             else:
                 self.frames.push ((ftype, chan, ob))
         elif ftype == spec.FRAME_HEADER:
-            cid, weight, size, flags = struct.unpack ('>hhqh', payload[:14])
+            cid, weight, size, flags = struct.unpack ('>hhqH', payload[:14])
             #W ('<<< HEADER: cid=%d weight=%d size=%d flags=%x payload=%r\n' % (cid, weight, size, flags, payload))
             #W ('<<< self.buffer=%r\n' % (self.buffer,))
+            if flags:
+                self.next_properties = unpack_properties (flags, payload[14:])
+            else:
+                self.next_properties = {}
             self.remain = size
         elif ftype == spec.FRAME_BODY:
             #W ('<<< FRAME_BODY, len(payload)=%d\n' % (len(payload),))
@@ -170,7 +186,12 @@ class client:
             self.body.append (payload)
             if self.remain == 0:
                 if self.next_content_consumer is not None:
-                    self.next_content_consumer.push (self.body)
+                    ob, consumer = self.next_content_consumer
+                    consumer.push ((ob, self.next_properties, self.body))
+                    self.next_content_consumer = None
+                    self.next_properties = None
+                else:
+                    W ('dropped data: %r\n' % (self.body,))
                 self.body = []
         # XXX spec.FRAME_HEARTBEAT
         else:
@@ -206,9 +227,21 @@ class client:
         return chan
 
     def add_consumer (self, chan, tag):
+        "create a consumer for channel <chan> and tag <tag>"
         fifo = coro.fifo()
         self.consumers[(chan, tag)] = fifo
         return fifo
+
+    def make_default_consumer (self, chan):
+        "create a catch-all consumer for channel <chan>"
+        # this is useful for catching re-deliveries
+        fifo = coro.fifo()
+        self.consumers[chan] = fifo
+        return fifo
+
+    def notify_consumers_of_close (self):
+        for _, fifo in self.consumers.iteritems():
+            fifo.push (connection_closed)
 
 class channel:
 
@@ -241,27 +274,32 @@ class channel:
                           durable=False, auto_delete=False, internal=False, nowait=False, arguments={}):
         frame = spec.exchange.declare (0, exchange, type, passive, durable, auto_delete, internal, nowait, arguments)
         self.send_frame (spec.FRAME_METHOD, frame)
-        ftype, channel, frame = self.conn.expect_frame (spec.FRAME_METHOD, 'exchange.declare_ok')
-        return frame
+        if not nowait:
+            ftype, channel, frame = self.conn.expect_frame (spec.FRAME_METHOD, 'exchange.declare_ok')
+            assert channel == self.num
+            return frame
 
     def queue_declare (self, queue='', passive=False, durable=False,
                        exclusive=False, auto_delete=False, nowait=False, arguments={}):
         frame = spec.queue.declare (0, queue, passive, durable, exclusive, auto_delete, nowait, arguments)
         self.send_frame (spec.FRAME_METHOD, frame)
-        ftype, channel, frame = self.conn.expect_frame (spec.FRAME_METHOD, 'queue.declare_ok')
-        assert channel == self.num
-        return frame
+        if not nowait:
+            ftype, channel, frame = self.conn.expect_frame (spec.FRAME_METHOD, 'queue.declare_ok')
+            assert channel == self.num
+            return frame
 
     def queue_bind (self, queue='', exchange=None, routing_key='', nowait=False, arguments={}):
         frame = spec.queue.bind (0, queue, exchange, routing_key, nowait, arguments)
         self.send_frame (spec.FRAME_METHOD, frame)
-        ftype, channel, frame = self.conn.expect_frame (spec.FRAME_METHOD, 'queue.bind_ok')
-        assert channel == self.num
-        return frame
+        if not nowait:
+            ftype, channel, frame = self.conn.expect_frame (spec.FRAME_METHOD, 'queue.bind_ok')
+            assert channel == self.num
+            return frame
 
     def basic_consume (self, queue='', consumer_tag='', no_local=False,
-                       no_ack=False, exclusive=False, nowait=False, arguments={}):
-        frame = spec.basic.consume (0, queue, consumer_tag, no_local, no_ack, exclusive, nowait, arguments)
+                       no_ack=False, exclusive=False, arguments={}):
+        # we do not allow 'nowait' since that precludes us from establishing a consumer fifo.
+        frame = spec.basic.consume (0, queue, consumer_tag, no_local, no_ack, exclusive, False, arguments)
         self.send_frame (spec.FRAME_METHOD, frame)
         ftype, channel, frame = self.conn.expect_frame (spec.FRAME_METHOD, 'basic.consume_ok')
         fifo = self.conn.add_consumer (self.num, frame.consumer_tag)
@@ -269,24 +307,46 @@ class channel:
         return fifo
 
     def basic_get (self, queue='', no_ack=False):
-        frame = spec.basic.get (0, queue, nowait)
+        frame = spec.basic.get (0, queue, no_ack)
         self.send_frame (spec.FRAME_METHOD, frame)
         ftype, channel, frame = self.conn.expect_frame (spec.FRAME_METHOD, 'basic.get_ok', 'basic.empty')
         assert channel == self.num
         return frame
 
-    def basic_publish (self, payload, exchange='', routing_key='', mandatory=False, immediate=False):
+    def basic_publish (self, payload, exchange='', routing_key='', mandatory=False, immediate=False, properties=None):
         frame = spec.basic.publish (0, exchange, routing_key, mandatory, immediate)
         self.send_frame (spec.FRAME_METHOD, frame)
         class_id = spec.basic.publish.id[0] # 60
         weight = 0
         size = len (payload)
-        flags = 0
-        head = struct.pack ('>hhqh', class_id, weight, size, flags)
-        self.send_frame (spec.FRAME_HEADER, head)
+        if properties:
+            flags, pdata = pack_properties (properties)
+        else:
+            flags = 0
+            pdata = ''
+        head = struct.pack ('>hhqH', class_id, weight, size, flags)
+        self.send_frame (spec.FRAME_HEADER, head + pdata)
         chunk = self.conn.tune.frame_max
         for i in range (0, size, chunk):
             self.send_frame (spec.FRAME_BODY, payload[i:i+chunk])
+
+    def basic_ack (self, delivery_tag=0, multiple=False):
+        frame = spec.basic.ack (delivery_tag, multiple)
+        self.send_frame (spec.FRAME_METHOD, frame)
+
+    def get_ack (self):
+        ftype, channel, frame = self.conn.expect_frame (spec.FRAME_METHOD, 'basic.ack')
+        return frame
+
+    def close (self, reply_code=0, reply_text='normal shutdown', class_id=0, method_id=0):
+        frame = spec.channel.close (reply_code, reply_text, class_id, method_id)
+        self.send_frame (spec.FRAME_METHOD, frame)
+        ftype, channel, frame = self.conn.expect_frame (spec.FRAME_METHOD, 'channel.close_ok')
+        return frame
+
+    def make_default_consumer (self):
+        "create a consumer to catch unexpected deliveries"
+        return self.conn.make_default_consumer (self.num)
 
     # rabbit mq extension
     def confirm_select (self, nowait=False):
@@ -300,8 +360,28 @@ class channel:
             self.send_frame (spec.FRAME_METHOD, frame)
             if not nowait:
                 ftype, channel, frame = self.conn.expect_frame (spec.FRAME_METHOD, 'confirm.select_ok')
-            return frame
+                return frame
 
-    def get_ack (self):
-        ftype, channel, frame = self.conn.expect_frame (spec.FRAME_METHOD, 'basic.ack')
-        return frame
+
+def pack_properties (props):
+    sbp = spec.basic.properties
+    r = []
+    flags = 0
+    for k, v in props.iteritems():
+        if sbp.name_map.has_key (k):
+            bit, unpack, pack = sbp.name_map[k]
+            r.append (pack (v))
+            flags |= 1<<bit
+        else:
+            raise KeyError ("unknown basic property: %r" % (k,))
+    return flags, ''.join (r)
+
+def unpack_properties (flags, data):
+    sbp = spec.basic.properties
+    r = {}
+    pos = 0
+    for bit, name in sbp.bit_map.iteritems():
+        if flags & 1<<bit:
+            _, unpack, pack = sbp.name_map[name]
+            r[name], pos = unpack (data, pos)
+    return r
