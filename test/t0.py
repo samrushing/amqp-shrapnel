@@ -50,7 +50,7 @@ class consumer:
             return properties, ''.join (data)
 
 def t0():
-    c = amqp_shrapnel.client (('guest', 'guest'), '127.0.0.1')
+    c = amqp_shrapnel.client (('guest', 'guest'), '127.0.0.1', heartbeat=30)
     c.go()
     ch = c.channel()
     ch.exchange_declare (exchange='ething')
