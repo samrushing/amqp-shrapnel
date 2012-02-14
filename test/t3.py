@@ -4,6 +4,7 @@
 
 import amqp_shrapnel
 
+
 def t3():
     global c
     c = amqp_shrapnel.client (('guest', 'guest'), '127.0.0.1')
@@ -15,7 +16,8 @@ def t3():
     ch.confirm_select()
     print 'entering send loop'
     for i in range (10):
-        ch.basic_publish ('howdy there!', exchange='ething', routing_key='notification')
+        props = {'content-type':'raw goodness', 'message-id' : 'msg_%d' % (i,)}
+        ch.basic_publish ('howdy there!', exchange='ething', routing_key='notification', properties=props)
         print 'sent'
         ch.get_ack()
         print 'confirmed'
