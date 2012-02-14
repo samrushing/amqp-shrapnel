@@ -29,11 +29,12 @@ class client:
     version = [0,0,9,1]
     buffer_size = 4000
 
-    def __init__ (self, auth, host, port=5672, virtual_host='/'):
+    def __init__ (self, auth, host, port=5672, virtual_host='/', heartbeat=0):
         self.port = port
         self.host = host
         self.auth = auth
         self.virtual_host = virtual_host
+        self.heartbeat = heartbeat
         self.frame_state = 0
         self.frames = coro.fifo()
         # collect body parts here.  heh.
@@ -41,6 +42,7 @@ class client:
         self.next_content_consumer = None
         self.next_properties = None
         self.consumers = {}
+        self.closed_cv = coro.condition_variable()
 
     # state diagram for connection objects:
     #
@@ -93,7 +95,7 @@ class client:
             # I'm AMQP, and I approve this tune value.
             self.send_frame (
                 spec.FRAME_METHOD, 0,
-                spec.connection.tune_ok (frame.channel_max, frame.frame_max, frame.heartbeat)
+                spec.connection.tune_ok (frame.channel_max, frame.frame_max, self.heartbeat)
                 )
             # ok, ready to 'open' the connection.
             self.send_frame (
@@ -113,27 +115,33 @@ class client:
 
     def recv_loop (self):
         try:
-            while 1:
-                while len (self.buffer):
-                    self.unpack_frame()
-                block = self.s.recv (self.buffer_size)
-                #W ('recv_loop: %d bytes\n' % (len(block),))
-                if not block:
-                    break
-                else:
-                    self.buffer += block
+            try:
+                while 1:
+                    while len (self.buffer):
+                        self.unpack_frame()
+                    if self.heartbeat:
+                        block = coro.with_timeout (self.heartbeat * 2, self.s.recv, self.buffer_size)
+                    else:
+                        block = self.s.recv (self.buffer_size)
+                    #W ('recv_loop: %d bytes\n' % (len(block),))
+                    if not block:
+                        break
+                    else:
+                        self.buffer += block
+            except coro.TimeoutError:
+                # two heartbeat periods have expired with no data, so we let the
+                #   connection close.  XXX Should we bother trying to call connection.close()?
+                pass
         finally:
             self.notify_consumers_of_close()
+            self.closed_cv.wake_all()
             self.s.close()
 
     def unpack_frame (self):
         # unpack the frame sitting in self.buffer
         ftype, chan, size = struct.unpack ('>BHL', self.buffer[:7])
         #W ('<<< frame: ftype=%r channel=%r size=%d\n' % (ftype, chan, size))
-        if ftype > 4:
-            self.close()
-            raise ProtocolError ("invalid type in frame: %r" % (ftype,))
-        elif size + 8 <= len(self.buffer) and self.buffer[7+size] == '\xce':
+        if size + 8 <= len(self.buffer) and self.buffer[7+size] == '\xce':
             # we have the whole frame
             # <head> <payload> <end> ...
             # [++++++++++++++++++++++++]
@@ -193,24 +201,24 @@ class client:
                 else:
                     W ('dropped data: %r\n' % (self.body,))
                 self.body = []
-        # XXX spec.FRAME_HEARTBEAT
+        elif ftype == spec.FRAME_HEARTBEAT:
+            #W ('<<< FRAME_HEARTBEAT\n')
+            pass
         else:
-            # XXX close connection
+            self.close (420, "unknown frame type: %r" % (ftype,))
             raise ProtocolError ("unhandled frame type: %r" % (ftype,))
 
     def send_frame (self, ftype, channel, ob):
         f = []
-        if ftype == 1:
+        if ftype == spec.FRAME_METHOD:
             payload = struct.pack ('>hh', *ob.id) + ob.pack()
-        elif ftype == 2:
-            payload = ob
-        elif ftype == 3:
+        elif ftype in (spec.FRAME_HEADER, spec.FRAME_BODY, spec.FRAME_HEARTBEAT):
             payload = ob
         else:
             raise ProtocolError ("unhandled frame type: %r" % (ftype,))
         frame = struct.pack ('>BHL', ftype, channel, len (payload)) + payload + chr(spec.FRAME_END)
         r = self.s.send (frame)
-        #W ('send_frame: %r %d\n' % (frame, r))
+        #W ('>>> send_frame: %r %d\n' % (frame, r))
 
     def close (self, reply_code, reply_text, class_id, method_id):
         self.send_frame (
