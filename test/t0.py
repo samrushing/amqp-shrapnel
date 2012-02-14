@@ -11,11 +11,11 @@ import amqp_shrapnel
 #   $ telnet /tmp/amqp.bd
 #   [note: the full path is required, don't "cd /tmp; telnet amqp.bd" it won't work]
 # 3) from the back door, do this:
-#   >>> ch, f = t0()
-# 4) now <ch> is a channel object, and <f> is a fifo.  now we can wait for a message
-#    on the fifo:
+#   >>> con = t0()
+# 4) <con> is a consumer object.  now we can wait for a message
+#    on its fifo:
 #
-#   >>> f.pop()
+#   >>> con.pop()
 #  
 #    this will block until a message shows up...
 #
@@ -26,22 +26,40 @@ import amqp_shrapnel
 #   -1: Tue Jan 10 12:49:27 2012 Exiting...
 #
 #   In the telnet window you should see:
-#   >>> f.pop()
-#   ['howdy, there!']
+#   >>> con.pop()
+#   'howdy, there!'
 #   >>>
 #
 
+# XXX rethink this, build its behavior in?
+#   e.g., have pop() idempotently return None, or maybe raise an error?
+class consumer:
+
+    def __init__ (self, channel, fifo):
+        self.channel = channel
+        self.fifo = fifo
+
+    def pop (self):
+        probe = self.fifo.pop()
+        if probe is amqp_shrapnel.connection_closed:
+            self.fifo = None
+            print 'connection closed'
+        else:
+            frame, properties, data = probe
+            self.channel.basic_ack (frame.delivery_tag)
+            return properties, ''.join (data)
+
 def t0():
+    c = amqp_shrapnel.client (('guest', 'guest'), '127.0.0.1')
+    c.go()
     ch = c.channel()
     ch.exchange_declare (exchange='ething')
     ch.queue_declare (queue='qthing', passive=False, durable=False)
     ch.queue_bind (exchange='ething', queue='qthing', routing_key='notification')
     fifo = ch.basic_consume (queue='qthing')
-    return ch, fifo
+    return consumer (ch, fifo)
 
 if __name__ == '__main__':
     import coro.backdoor
-    c = amqp_shrapnel.client (('guest', 'guest'), '127.0.0.1')
-    coro.spawn (c.go)
     coro.spawn (coro.backdoor.serve, unix_path='/tmp/amqp.bd')
     coro.event_loop()
