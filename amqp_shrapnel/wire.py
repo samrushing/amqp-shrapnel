@@ -43,6 +43,9 @@ def unpack_longstr (data, pos):
 def unpack_longlong (data, pos):
     return U ('>Q', data, pos)
 
+def unpack_timestamp (data, pos):
+    return U ('>Q', data, pos)
+
 def unpack_field_array (data, pos):
     n, = struct.unpack ('>L', data[pos:pos+4])
     pos += 4
@@ -105,6 +108,12 @@ def pack_short (v):
 
 def pack_long (v):
     return struct.pack ('>l', v)
+
+def pack_longlong (v):
+    return struct.pack ('>Q', v)
+
+def pack_timestamp (v):
+    return struct.pack ('>Q', v)
 
 def pack_shortstr (s):
     return struct.pack ('>B', len(s)) + s
