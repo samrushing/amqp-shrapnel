@@ -24,7 +24,6 @@ def t0():
     return c,ch,s
 
 if __name__ == '__main__':
-    import coro.backdoor
-    coro.spawn (coro.backdoor.serve, unix_path='/tmp/rpcs.bd')
+    import coro
     coro.spawn (t0)
     coro.event_loop()
