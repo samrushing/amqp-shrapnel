@@ -20,6 +20,9 @@ def U (format, data, pos):
 def unpack_octet (data, pos):
     return U ('>b', data, pos)
 
+def unpack_bool (data, pos):
+    return U ('>?', data, pos)
+
 def unpack_short (data, pos):
     return U ('>h', data, pos)
 
@@ -103,6 +106,9 @@ def unpack_table (data, pos):
 def pack_octet (v):
     return struct.pack ('>b', v)
 
+def pack_bool (v):
+    return struct.pack ('>?', v)
+
 def pack_short (v):
     return struct.pack ('>h', v)
 
@@ -125,7 +131,9 @@ def pack_table (d):
     r = []
     for k, v in d.items():
         r.append (pack_shortstr (k))
-        if is_a (v, int):
+        if is_a (v, bool):
+            r.append ('t' + pack_octet (v))
+        elif is_a (v, int):
             neg = v < 0
             if neg:
                 v = -v
@@ -150,7 +158,7 @@ def pack_table (d):
             #    r.append ('S' + pack_longstr (v))
             r.append ('S' + pack_longstr (v))
         elif is_a (v, dict):
-            r.append ('F' + pack_table (d))
+            r.append ('F' + pack_table (v))
         else:
             raise ValueError ("don't know how to pack a %r yet" % (v.__class__,))
     data = ''.join (r)
