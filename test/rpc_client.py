@@ -19,7 +19,6 @@ def t0():
     coro.set_exit (1)
 
 if __name__ == '__main__':
-    import coro.backdoor
-    coro.spawn (coro.backdoor.serve, unix_path='/tmp/rpcc.bd')
+    import coro
     coro.spawn (t0)
     coro.event_loop()
