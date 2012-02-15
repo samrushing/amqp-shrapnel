@@ -347,7 +347,7 @@ class channel:
         else:
             flags = 0
             pdata = ''
-        W ('basic_publish: properties=%r\n' % (unpack_properties (flags, pdata),))
+        #W ('basic_publish: properties=%r\n' % (unpack_properties (flags, pdata),))
         head = struct.pack ('>hhqH', class_id, weight, size, flags)
         self.send_frame (spec.FRAME_HEADER, head + pdata)
         chunk = self.conn.tune.frame_max
