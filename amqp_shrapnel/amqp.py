@@ -3,6 +3,7 @@
 import struct
 import coro
 import spec
+import rpc
 import sys
 
 from pprint import pprint as pp
@@ -28,6 +29,14 @@ class client:
 
     version = [0,0,9,1]
     buffer_size = 4000
+    properties = {
+        'product':'AMQP/shrapnel',
+        'version':'0.5',
+        'information':'https://github.com/samrushing/amqp-shrapnel',
+        'capabilities': {
+            'publisher_confirms':True,
+            }
+        }
 
     def __init__ (self, auth, host, port=5672, virtual_host='/', heartbeat=0):
         self.port = port
@@ -43,6 +52,8 @@ class client:
         self.next_properties = None
         self.consumers = {}
         self.closed_cv = coro.condition_variable()
+        self.last_send = coro.now
+        self.channels = {}
 
     # state diagram for connection objects:
     #
@@ -83,7 +94,7 @@ class client:
                 raise AuthenticationError ("no shared auth mechanism: %r" % (mechanisms,))
             reply = spec.connection.start_ok (
                 # XXX put real stuff in here...
-                client_properties={'product':'AMQP/shrapnel'},
+                client_properties=self.properties,
                 response=response
                 )
             self.send_frame (spec.FRAME_METHOD, 0, reply)
@@ -107,11 +118,12 @@ class client:
     def expect_frame (self, ftype, *names):
         ftype, channel, frame = self.frames.pop()
         if frame._name not in names:
-            #W ('unexpected frame:\n')
-            #dump_ob (frame)
             raise ProtocolError ("expected %r frame, got %r" % (names, frame._name))
         else:
             return ftype, channel, frame
+
+    def secs_since_send (self):
+        return (coro.now - self.last_send) / coro.ticks_per_sec
 
     def recv_loop (self):
         try:
@@ -123,17 +135,18 @@ class client:
                         block = coro.with_timeout (self.heartbeat * 2, self.s.recv, self.buffer_size)
                     else:
                         block = self.s.recv (self.buffer_size)
-                    #W ('recv_loop: %d bytes\n' % (len(block),))
                     if not block:
                         break
                     else:
                         self.buffer += block
+                    if self.heartbeat and self.secs_since_send() > self.heartbeat:
+                        self.send_frame (spec.FRAME_HEARTBEAT, 0, '')
             except coro.TimeoutError:
                 # two heartbeat periods have expired with no data, so we let the
                 #   connection close.  XXX Should we bother trying to call connection.close()?
                 pass
         finally:
-            self.notify_consumers_of_close()
+            self.notify_channels_of_close()
             self.closed_cv.wake_all()
             self.s.close()
 
@@ -159,6 +172,7 @@ class client:
         # -------------------------------------------
         # we have the payload, what do we do with it?
         # -------------------------------------------
+        W ('<<< frame: ftype=%r channel=%r size=%d payload=%r\n' % (ftype, chan, size, payload))
         if ftype == spec.FRAME_METHOD:
             cm_id = struct.unpack ('>hh', payload[:4])
             ob = spec.method_map[cm_id]()
@@ -167,16 +181,11 @@ class client:
             #dump_ob (ob)
             # catch asynchronous stuff here and ship it out...
             if is_a (ob, spec.basic.deliver):
-                probe = self.consumers.get ((chan, ob.consumer_tag), None)
-                if probe is None:
-                    # XXX useful for catching deliveries from previous sessions...
-                    probe = self.consumers.get (chan, None)
-                    if probe is None:
-                        W ('warning, dropping unexpected data for chan=%d consumer_tag=%r\n' % (chan, ob.consumer_tag,))
-                    else:
-                        self.next_content_consumer = (ob, probe)
+                ch = self.channels.get (chan, None)
+                if ch is None:
+                    W ('warning, dropping delivery for unknown channel #%d consumer_tag=%r\n' % (chan, ob.consumer_tag))
                 else:
-                    self.next_content_consumer = (ob, probe)
+                    self.next_content_consumer = (ob, ch)
             else:
                 self.frames.push ((ftype, chan, ob))
         elif ftype == spec.FRAME_HEADER:
@@ -194,8 +203,8 @@ class client:
             self.body.append (payload)
             if self.remain == 0:
                 if self.next_content_consumer is not None:
-                    ob, consumer = self.next_content_consumer
-                    consumer.push ((ob, self.next_properties, self.body))
+                    ob, ch = self.next_content_consumer
+                    ch.accept_delivery (ob, self.next_properties, self.body)
                     self.next_content_consumer = None
                     self.next_properties = None
                 else:
@@ -205,7 +214,7 @@ class client:
             #W ('<<< FRAME_HEARTBEAT\n')
             pass
         else:
-            self.close (420, "unknown frame type: %r" % (ftype,))
+            self.close (505, "unexpected frame type: %r" % (ftype,))
             raise ProtocolError ("unhandled frame type: %r" % (ftype,))
 
     def send_frame (self, ftype, channel, ob):
@@ -217,10 +226,13 @@ class client:
         else:
             raise ProtocolError ("unhandled frame type: %r" % (ftype,))
         frame = struct.pack ('>BHL', ftype, channel, len (payload)) + payload + chr(spec.FRAME_END)
-        r = self.s.send (frame)
+        self.s.send (frame)
+        self.last_send = coro.now
         #W ('>>> send_frame: %r %d\n' % (frame, r))
 
-    def close (self, reply_code, reply_text, class_id, method_id):
+    def close (self, reply_code=200, reply_text='normal shutdown', class_id=0, method_id=0):
+        # close any open channels first.
+        self.notify_channels_of_close()
         self.send_frame (
             spec.FRAME_METHOD, 0,
             spec.connection.close (reply_code, reply_text, class_id, method_id)
@@ -232,24 +244,16 @@ class client:
         self.send_frame (spec.FRAME_METHOD, chan.num, spec.channel.open (out_of_band))
         ftype, chan_num, frame = self.expect_frame (spec.FRAME_METHOD, 'channel.open_ok')
         assert chan_num == chan.num
+        self.channels[chan.num] = chan
         return chan
 
-    def add_consumer (self, chan, tag):
-        "create a consumer for channel <chan> and tag <tag>"
-        fifo = coro.fifo()
-        self.consumers[(chan, tag)] = fifo
-        return fifo
+    def forget_channel (self, num):
+        del self.channels[num]
 
-    def make_default_consumer (self, chan):
-        "create a catch-all consumer for channel <chan>"
-        # this is useful for catching re-deliveries
-        fifo = coro.fifo()
-        self.consumers[chan] = fifo
-        return fifo
-
-    def notify_consumers_of_close (self):
-        for _, fifo in self.consumers.iteritems():
-            fifo.push (connection_closed)
+    def notify_channels_of_close (self):
+        items = self.channels.items()
+        for num, ch in items:
+            ch.notify_of_close()
 
 class channel:
 
@@ -264,10 +268,13 @@ class channel:
     #                     / S:CLOSE C:CLOSE-OK
     
     counter = 1
+    ack_discards = True
 
     def __init__ (self, conn):
         self.conn = conn
         self.num = channel.counter
+        self.confirm_mode = False
+        self.consumers = {}
         channel.counter += 1
         
     def send_frame (self, ftype, frame):
@@ -310,9 +317,17 @@ class channel:
         frame = spec.basic.consume (0, queue, consumer_tag, no_local, no_ack, exclusive, False, arguments)
         self.send_frame (spec.FRAME_METHOD, frame)
         ftype, channel, frame = self.conn.expect_frame (spec.FRAME_METHOD, 'basic.consume_ok')
-        fifo = self.conn.add_consumer (self.num, frame.consumer_tag)
         assert channel == self.num
-        return fifo
+        con0 = consumer (self, frame.consumer_tag)
+        self.add_consumer (con0)
+        return con0
+
+    def basic_cancel (self, consumer_tag='', nowait=False):
+        frame = spec.basic.cancel (consumer_tag, nowait)
+        self.send_frame (spec.FRAME_METHOD, frame)
+        if not nowait:
+            ftype, channel, frame = self.conn.expect_frame (spec.FRAME_METHOD, 'basic.cancel_ok')
+        self.forget_consumer (consumer_tag)
 
     def basic_get (self, queue='', no_ack=False):
         frame = spec.basic.get (0, queue, no_ack)
@@ -332,11 +347,14 @@ class channel:
         else:
             flags = 0
             pdata = ''
+        W ('basic_publish: properties=%r\n' % (unpack_properties (flags, pdata),))
         head = struct.pack ('>hhqH', class_id, weight, size, flags)
         self.send_frame (spec.FRAME_HEADER, head + pdata)
         chunk = self.conn.tune.frame_max
         for i in range (0, size, chunk):
             self.send_frame (spec.FRAME_BODY, payload[i:i+chunk])
+        if self.confirm_mode:
+            self.conn.expect_frame (spec.FRAME_METHOD, 'basic.ack')
 
     def basic_ack (self, delivery_tag=0, multiple=False):
         frame = spec.basic.ack (delivery_tag, multiple)
@@ -350,11 +368,35 @@ class channel:
         frame = spec.channel.close (reply_code, reply_text, class_id, method_id)
         self.send_frame (spec.FRAME_METHOD, frame)
         ftype, channel, frame = self.conn.expect_frame (spec.FRAME_METHOD, 'channel.close_ok')
+        self.conn.forget_channel (self.num)
         return frame
+
+    def accept_delivery (self, frame, properties, data):
+        probe = self.consumers.get (frame.consumer_tag, None)
+        if probe is None:
+            W ('received data for unknown consumer tag: %r\n' % (frame.consumer_tag,))
+            if self.ack_discards:
+                self.basic_ack (frame.delivery_tag)
+        else:
+            probe.push ((frame, properties, data))
 
     def make_default_consumer (self):
         "create a consumer to catch unexpected deliveries"
-        return self.conn.make_default_consumer (self.num)
+        con0 = consumer (self.num, '')
+        return self.conn.make_default_consumer (con0)
+
+    def add_consumer (self, con):
+        self.consumers[con.tag] = con
+
+    def forget_consumer (self, tag):
+        del self.consumers[tag]
+
+    def notify_consumers_of_close (self):
+        for _, con in self.consumers.iteritems():
+            con.close()
+
+    def notify_of_close (self):
+        self.notify_consumers_of_close()
 
     # rabbit mq extension
     def confirm_select (self, nowait=False):
@@ -368,28 +410,70 @@ class channel:
             self.send_frame (spec.FRAME_METHOD, frame)
             if not nowait:
                 ftype, channel, frame = self.conn.expect_frame (spec.FRAME_METHOD, 'confirm.select_ok')
-                return frame
-
+            self.confirm_mode = True
+            return frame
 
 def pack_properties (props):
     sbp = spec.basic.properties
     r = []
     flags = 0
-    for k, v in props.iteritems():
-        if sbp.name_map.has_key (k):
-            bit, unpack, pack = sbp.name_map[k]
-            r.append (pack (v))
+    items = sbp.bit_map.items()
+    items.sort()
+    items.reverse()
+    for bit, name in items:
+        if props.has_key (name):
+            _, unpack, pack = sbp.name_map[name]
+            r.append (pack (props[name]))
             flags |= 1<<bit
-        else:
-            raise KeyError ("unknown basic property: %r" % (k,))
     return flags, ''.join (r)
 
 def unpack_properties (flags, data):
     sbp = spec.basic.properties
     r = {}
     pos = 0
-    for bit, name in sbp.bit_map.iteritems():
+    # these must be unpacked from highest bit to lowest [really?]
+    items = sbp.bit_map.items()
+    items.sort()
+    items.reverse()
+    for bit, name in items:
         if flags & 1<<bit:
             _, unpack, pack = sbp.name_map[name]
             r[name], pos = unpack (data, pos)
     return r
+
+class AMQP_Consumer_Closed (Exception):
+    pass
+
+class consumer:
+
+    def __init__ (self, channel, tag):
+        self.channel = channel
+        self.tag = tag
+        self.fifo = coro.fifo()
+        self.closed = False
+
+    def close (self):
+        self.fifo.push (connection_closed)
+        self.closed = True
+        self.channel.forget_consumer (self)
+
+    def cancel (self):
+        self.closed = True
+        self.channel.basic_cancel (self.tag)
+
+    def push (self, value):
+        self.fifo.push (value)
+
+    def pop (self, ack=True):
+        if self.closed:
+            raise AMQP_Consumer_Closed
+        else:
+            probe = self.fifo.pop()
+            if probe == connection_closed:
+                self.closed = True
+                raise AMQP_Consumer_Closed
+            else:
+                frame, properties, data = probe
+                if ack:
+                    self.channel.basic_ack (frame.delivery_tag)
+                return frame, properties, ''.join (data)
