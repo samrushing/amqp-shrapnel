@@ -172,7 +172,7 @@ class client:
         # -------------------------------------------
         # we have the payload, what do we do with it?
         # -------------------------------------------
-        W ('<<< frame: ftype=%r channel=%r size=%d payload=%r\n' % (ftype, chan, size, payload))
+        #W ('<<< frame: ftype=%r channel=%r size=%d payload=%r\n' % (ftype, chan, size, payload))
         if ftype == spec.FRAME_METHOD:
             cm_id = struct.unpack ('>hh', payload[:4])
             ob = spec.method_map[cm_id]()
