@@ -1,0 +1,393 @@
+
+
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN"
+  "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+
+
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    
+    <title>Shrapnel/AMQP &mdash; Shrapnel/AMQP 0.5 documentation</title>
+    
+    <link rel="stylesheet" href="_static/default.css" type="text/css" />
+    <link rel="stylesheet" href="_static/pygments.css" type="text/css" />
+    
+    <script type="text/javascript">
+      var DOCUMENTATION_OPTIONS = {
+        URL_ROOT:    '',
+        VERSION:     '0.5',
+        COLLAPSE_INDEX: false,
+        FILE_SUFFIX: '.html',
+        HAS_SOURCE:  true
+      };
+    </script>
+    <script type="text/javascript" src="_static/jquery.js"></script>
+    <script type="text/javascript" src="_static/underscore.js"></script>
+    <script type="text/javascript" src="_static/doctools.js"></script>
+    <link rel="top" title="Shrapnel/AMQP 0.5 documentation" href="#" /> 
+  </head>
+  <body>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             accesskey="I">index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="#">Shrapnel/AMQP 0.5 documentation</a> &raquo;</li> 
+      </ul>
+    </div>  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          <div class="body">
+            
+  <div class="section" id="shrapnel-amqp">
+<h1>Shrapnel/AMQP<a class="headerlink" href="#shrapnel-amqp" title="Permalink to this headline">¶</a></h1>
+<p>The <a class="reference external" href="http://en.wikipedia.org/wiki/Advanced_Message_Queuing_Protocol">AMQP</a> protocol is somewhat different from most protocols in that it
+uses a half-synchronous, half-asynchronous design that is difficult to
+provide an interface for: most systems provide concurrency through
+either blocking code, or non-blocking code; but AMQP requires a bit of
+each.</p>
+<p>Because of this, <a class="reference external" href="http://github.com/ironport/shrapnel/">Shrapnel</a> is a perfect solution: it handles both
+models easily - underneath its blocking/synchronous exterior beats a
+heart of pure event-driven high-performance mayhem.</p>
+<p><a class="reference external" href="http://github.com/ironport/shrapnel/">Shrapnel</a> makes it easy to juggle multiple connections, multiple
+channels, multiple channels per connection, and unravels the hellish
+complexity of managing RPCs, correlation ids, asynchronous
+notifications, etc..</p>
+<div class="section" id="installing">
+<h2>Installing<a class="headerlink" href="#installing" title="Permalink to this headline">¶</a></h2>
+<p>First, install shrapnel.  Although we are working on getting &#8216;pip
+install&#8217; to work, it&#8217;s not quite there yet, so just use git clone and
+run setup yourself:</p>
+<div class="highlight-python"><pre>$ git clone git@github.com:ironport/shrapnel.git
+$ cd shrapnel
+$ python setup.py build
+$ sudo python setup.py install</pre>
+</div>
+<p>Installing shrapnel/amqp:</p>
+<div class="highlight-python"><pre>$ pip install shrapnel_amqp</pre>
+</div>
+<p>If that fails, try:</p>
+<div class="highlight-python"><pre>$ pip install --no-deps shrapnel_amqp</pre>
+</div>
+</div>
+<div class="section" id="using">
+<h2>Using<a class="headerlink" href="#using" title="Permalink to this headline">¶</a></h2>
+<p>Check out the examples in the <cite>test</cite> directory, they show how the
+client is used within the shrapnel event loop paradigm.  Remember to
+always run within a thread/coroutine -i.e., you can&#8217;t use this
+library from the command line!  [an exception to this is to use the
+&#8216;back door&#8217; facility which lets you telnet into a python command line,
+very useful for debugging].</p>
+</div>
+<div class="section" id="module-amqp_shrapnel.amqp">
+<span id="amqp"></span><h2>AMQP<a class="headerlink" href="#module-amqp_shrapnel.amqp" title="Permalink to this headline">¶</a></h2>
+<p>Implements the AMQP protocol for Shrapnel.</p>
+<dl class="class">
+<dt id="amqp_shrapnel.amqp.client">
+<em class="property">class </em><tt class="descclassname">amqp_shrapnel.amqp.</tt><tt class="descname">client</tt><big>(</big><em>auth</em>, <em>host</em>, <em>port=5672</em>, <em>virtual_host='/'</em>, <em>heartbeat=0</em><big>)</big><a class="headerlink" href="#amqp_shrapnel.amqp.client" title="Permalink to this definition">¶</a></dt>
+<dd><p><em>auth</em>: is a tuple of (username, password) for the &#8216;PLAIN&#8217; authentication mechanism.</p>
+<p><em>host</em>: string - IP address of the server.</p>
+<p><em>port</em>: int -  TCP port number</p>
+<p><em>virtual_host</em>: string - specifies which &#8216;virtual host&#8217; to connect to.</p>
+<dl class="docutils">
+<dt><em>heartbeat</em>: int - whether to request heartbeat mode from the</dt>
+<dd>server.  A value of 0 indicates no heartbeat wanted.  Any
+other value specifies the number of seconds of idle time from
+either side before a heartbeat frame is sent.</dd>
+</dl>
+<dl class="method">
+<dt id="amqp_shrapnel.amqp.client.channel">
+<tt class="descname">channel</tt><big>(</big><em>out_of_band=''</em><big>)</big><a class="headerlink" href="#amqp_shrapnel.amqp.client.channel" title="Permalink to this definition">¶</a></dt>
+<dd><p>Create a new channel on this connection.</p>
+<p><a class="reference external" href="http://www.rabbitmq.com/amqp-0-9-1-reference.html#connection.channel">http://www.rabbitmq.com/amqp-0-9-1-reference.html#connection.channel</a></p>
+</dd></dl>
+
+<dl class="method">
+<dt id="amqp_shrapnel.amqp.client.close">
+<tt class="descname">close</tt><big>(</big><em>reply_code=200</em>, <em>reply_text='normal shutdown'</em>, <em>class_id=0</em>, <em>method_id=0</em><big>)</big><a class="headerlink" href="#amqp_shrapnel.amqp.client.close" title="Permalink to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="http://www.rabbitmq.com/amqp-0-9-1-reference.html#connection.close">http://www.rabbitmq.com/amqp-0-9-1-reference.html#connection.close</a></p>
+</dd></dl>
+
+<dl class="method">
+<dt id="amqp_shrapnel.amqp.client.expect_frame">
+<tt class="descname">expect_frame</tt><big>(</big><em>ftype</em>, <em>*names</em><big>)</big><a class="headerlink" href="#amqp_shrapnel.amqp.client.expect_frame" title="Permalink to this definition">¶</a></dt>
+<dd><p>read/expect a frame from the list <em>names</em></p>
+</dd></dl>
+
+<dl class="method">
+<dt id="amqp_shrapnel.amqp.client.go">
+<tt class="descname">go</tt><big>(</big><big>)</big><a class="headerlink" href="#amqp_shrapnel.amqp.client.go" title="Permalink to this definition">¶</a></dt>
+<dd><p>Connect to the server.  Spawns a new thread to monitor the connection.</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="amqp_shrapnel.amqp.client.send_frame">
+<tt class="descname">send_frame</tt><big>(</big><em>ftype</em>, <em>channel</em>, <em>ob</em><big>)</big><a class="headerlink" href="#amqp_shrapnel.amqp.client.send_frame" title="Permalink to this definition">¶</a></dt>
+<dd><p>send a frame of type <em>ftype</em> on this channel.  <em>ob</em> is a frame object built by the &lt;spec&gt; module</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="amqp_shrapnel.amqp.channel">
+<em class="property">class </em><tt class="descclassname">amqp_shrapnel.amqp.</tt><tt class="descname">channel</tt><big>(</big><em>conn</em><big>)</big><a class="headerlink" href="#amqp_shrapnel.amqp.channel" title="Permalink to this definition">¶</a></dt>
+<dd><p><em>conn</em>: the connection object this channel resides on.</p>
+<dl class="docutils">
+<dt>The channel object presents the main interface to the user, exposing most of the &#8216;methods&#8217;</dt>
+<dd>of AMQP, including the &#8216;basic&#8217; and &#8216;channel&#8217; methods.</dd>
+</dl>
+<p>A connection may have multiple channels.</p>
+<dl class="method">
+<dt id="amqp_shrapnel.amqp.channel.basic_ack">
+<tt class="descname">basic_ack</tt><big>(</big><em>delivery_tag=0</em>, <em>multiple=False</em><big>)</big><a class="headerlink" href="#amqp_shrapnel.amqp.channel.basic_ack" title="Permalink to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="http://www.rabbitmq.com/amqp-0-9-1-reference.html#basic.ack">http://www.rabbitmq.com/amqp-0-9-1-reference.html#basic.ack</a></p>
+</dd></dl>
+
+<dl class="method">
+<dt id="amqp_shrapnel.amqp.channel.basic_cancel">
+<tt class="descname">basic_cancel</tt><big>(</big><em>consumer_tag=''</em>, <em>nowait=False</em><big>)</big><a class="headerlink" href="#amqp_shrapnel.amqp.channel.basic_cancel" title="Permalink to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="http://www.rabbitmq.com/amqp-0-9-1-reference.html#basic.cancel">http://www.rabbitmq.com/amqp-0-9-1-reference.html#basic.cancel</a></p>
+</dd></dl>
+
+<dl class="method">
+<dt id="amqp_shrapnel.amqp.channel.basic_consume">
+<tt class="descname">basic_consume</tt><big>(</big><em>queue=''</em>, <em>consumer_tag=''</em>, <em>no_local=False</em>, <em>no_ack=False</em>, <em>exclusive=False</em>, <em>arguments={}</em><big>)</big><a class="headerlink" href="#amqp_shrapnel.amqp.channel.basic_consume" title="Permalink to this definition">¶</a></dt>
+<dd><p>Start consuming messages from <em>queue</em>.</p>
+<p>Returns a new :class:consumer object which spawns a new thread to monitor incoming messages.</p>
+<p><a class="reference external" href="http://www.rabbitmq.com/amqp-0-9-1-reference.html#basic.consume">http://www.rabbitmq.com/amqp-0-9-1-reference.html#basic.consume</a></p>
+</dd></dl>
+
+<dl class="method">
+<dt id="amqp_shrapnel.amqp.channel.basic_get">
+<tt class="descname">basic_get</tt><big>(</big><em>queue=''</em>, <em>no_ack=False</em><big>)</big><a class="headerlink" href="#amqp_shrapnel.amqp.channel.basic_get" title="Permalink to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="http://www.rabbitmq.com/amqp-0-9-1-reference.html#basic.get">http://www.rabbitmq.com/amqp-0-9-1-reference.html#basic.get</a></p>
+</dd></dl>
+
+<dl class="method">
+<dt id="amqp_shrapnel.amqp.channel.basic_publish">
+<tt class="descname">basic_publish</tt><big>(</big><em>payload</em>, <em>exchange=''</em>, <em>routing_key=''</em>, <em>mandatory=False</em>, <em>immediate=False</em>, <em>properties=None</em><big>)</big><a class="headerlink" href="#amqp_shrapnel.amqp.channel.basic_publish" title="Permalink to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="http://www.rabbitmq.com/amqp-0-9-1-reference.html#basic.publish">http://www.rabbitmq.com/amqp-0-9-1-reference.html#basic.publish</a></p>
+</dd></dl>
+
+<dl class="method">
+<dt id="amqp_shrapnel.amqp.channel.close">
+<tt class="descname">close</tt><big>(</big><em>reply_code=0</em>, <em>reply_text='normal shutdown'</em>, <em>class_id=0</em>, <em>method_id=0</em><big>)</big><a class="headerlink" href="#amqp_shrapnel.amqp.channel.close" title="Permalink to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="http://www.rabbitmq.com/amqp-0-9-1-reference.html#channel.close">http://www.rabbitmq.com/amqp-0-9-1-reference.html#channel.close</a></p>
+</dd></dl>
+
+<dl class="method">
+<dt id="amqp_shrapnel.amqp.channel.confirm_select">
+<tt class="descname">confirm_select</tt><big>(</big><em>nowait=False</em><big>)</big><a class="headerlink" href="#amqp_shrapnel.amqp.channel.confirm_select" title="Permalink to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="http://www.rabbitmq.com/amqp-0-9-1-reference.html#confirm.select">http://www.rabbitmq.com/amqp-0-9-1-reference.html#confirm.select</a></p>
+</dd></dl>
+
+<dl class="method">
+<dt id="amqp_shrapnel.amqp.channel.exchange_declare">
+<tt class="descname">exchange_declare</tt><big>(</big><em>exchange=None</em>, <em>type='direct'</em>, <em>passive=False</em>, <em>durable=False</em>, <em>auto_delete=False</em>, <em>internal=False</em>, <em>nowait=False</em>, <em>arguments={}</em><big>)</big><a class="headerlink" href="#amqp_shrapnel.amqp.channel.exchange_declare" title="Permalink to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="http://www.rabbitmq.com/amqp-0-9-1-reference.html#exchange.declare">http://www.rabbitmq.com/amqp-0-9-1-reference.html#exchange.declare</a></p>
+</dd></dl>
+
+<dl class="method">
+<dt id="amqp_shrapnel.amqp.channel.make_default_consumer">
+<tt class="descname">make_default_consumer</tt><big>(</big><big>)</big><a class="headerlink" href="#amqp_shrapnel.amqp.channel.make_default_consumer" title="Permalink to this definition">¶</a></dt>
+<dd><p>create a consumer to catch unexpected deliveries</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="amqp_shrapnel.amqp.channel.queue_bind">
+<tt class="descname">queue_bind</tt><big>(</big><em>queue=''</em>, <em>exchange=None</em>, <em>routing_key=''</em>, <em>nowait=False</em>, <em>arguments={}</em><big>)</big><a class="headerlink" href="#amqp_shrapnel.amqp.channel.queue_bind" title="Permalink to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="http://www.rabbitmq.com/amqp-0-9-1-reference.html#queue.bind">http://www.rabbitmq.com/amqp-0-9-1-reference.html#queue.bind</a></p>
+</dd></dl>
+
+<dl class="method">
+<dt id="amqp_shrapnel.amqp.channel.queue_declare">
+<tt class="descname">queue_declare</tt><big>(</big><em>queue=''</em>, <em>passive=False</em>, <em>durable=False</em>, <em>exclusive=False</em>, <em>auto_delete=False</em>, <em>nowait=False</em>, <em>arguments={}</em><big>)</big><a class="headerlink" href="#amqp_shrapnel.amqp.channel.queue_declare" title="Permalink to this definition">¶</a></dt>
+<dd><p><a class="reference external" href="http://www.rabbitmq.com/amqp-0-9-1-reference.html#queue.declare">http://www.rabbitmq.com/amqp-0-9-1-reference.html#queue.declare</a></p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="amqp_shrapnel.amqp.consumer">
+<em class="property">class </em><tt class="descclassname">amqp_shrapnel.amqp.</tt><tt class="descname">consumer</tt><big>(</big><em>channel</em>, <em>tag</em><big>)</big><a class="headerlink" href="#amqp_shrapnel.amqp.consumer" title="Permalink to this definition">¶</a></dt>
+<dd><p>The consumer object manages the consumption of messages triggered by a call to basic.consume.</p>
+<p><em>channel</em>: the channel object delivering the messages.</p>
+<p><em>tag</em>: the unique consumer tag associated with the call to basic.consume</p>
+<dl class="method">
+<dt id="amqp_shrapnel.amqp.consumer.cancel">
+<tt class="descname">cancel</tt><big>(</big><big>)</big><a class="headerlink" href="#amqp_shrapnel.amqp.consumer.cancel" title="Permalink to this definition">¶</a></dt>
+<dd><p>cancel the basic.consume() call that created this consumer</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="amqp_shrapnel.amqp.consumer.close">
+<tt class="descname">close</tt><big>(</big><big>)</big><a class="headerlink" href="#amqp_shrapnel.amqp.consumer.close" title="Permalink to this definition">¶</a></dt>
+<dd><p>close this consumer channel</p>
+</dd></dl>
+
+<dl class="method">
+<dt id="amqp_shrapnel.amqp.consumer.pop">
+<tt class="descname">pop</tt><big>(</big><em>ack=True</em><big>)</big><a class="headerlink" href="#amqp_shrapnel.amqp.consumer.pop" title="Permalink to this definition">¶</a></dt>
+<dd><p>pop a new value from this consumer.  Will block if no value is available.</p>
+</dd></dl>
+
+</dd></dl>
+
+<p>Example:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">c</span> <span class="o">=</span> <span class="n">amqp_shrapnel</span><span class="o">.</span><span class="n">client</span> <span class="p">((</span><span class="s">&#39;guest&#39;</span><span class="p">,</span> <span class="s">&#39;guest&#39;</span><span class="p">),</span> <span class="s">&#39;127.0.0.1&#39;</span><span class="p">)</span>
+<span class="k">print</span> <span class="s">&#39;connecting...&#39;</span>
+<span class="n">c</span><span class="o">.</span><span class="n">go</span><span class="p">()</span> <span class="c"># i.e., connect...</span>
+<span class="k">print</span> <span class="s">&#39;channel...&#39;</span>
+<span class="n">ch</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">channel</span><span class="p">()</span>
+<span class="k">print</span> <span class="s">&#39;confirm_select...&#39;</span>
+<span class="n">ch</span><span class="o">.</span><span class="n">confirm_select</span><span class="p">()</span>
+<span class="k">print</span> <span class="s">&#39;entering send loop&#39;</span>
+<span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span> <span class="p">(</span><span class="mi">10</span><span class="p">):</span>
+    <span class="n">props</span> <span class="o">=</span> <span class="p">{</span><span class="s">&#39;content-type&#39;</span><span class="p">:</span><span class="s">&#39;raw goodness&#39;</span><span class="p">,</span> <span class="s">&#39;message-id&#39;</span> <span class="p">:</span> <span class="s">&#39;msg_</span><span class="si">%d</span><span class="s">&#39;</span> <span class="o">%</span> <span class="p">(</span><span class="n">i</span><span class="p">,)}</span>
+    <span class="n">ch</span><span class="o">.</span><span class="n">basic_publish</span> <span class="p">(</span><span class="s">&#39;howdy there!&#39;</span><span class="p">,</span> <span class="n">exchange</span><span class="o">=</span><span class="s">&#39;ething&#39;</span><span class="p">,</span> <span class="n">routing_key</span><span class="o">=</span><span class="s">&#39;notification&#39;</span><span class="p">,</span> <span class="n">properties</span><span class="o">=</span><span class="n">props</span><span class="p">)</span>
+    <span class="k">print</span> <span class="s">&#39;sent/confirmed&#39;</span>
+    <span class="n">coro</span><span class="o">.</span><span class="n">sleep_relative</span> <span class="p">(</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">coro</span><span class="o">.</span><span class="n">set_exit</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="module-amqp_shrapnel.rpc">
+<span id="rpc"></span><h2>RPC<a class="headerlink" href="#module-amqp_shrapnel.rpc" title="Permalink to this headline">¶</a></h2>
+<p>Provides an easy-to-use implementation of the AMQP &#8216;RPC pattern&#8217; that should work for most situations.</p>
+<dl class="class">
+<dt id="amqp_shrapnel.rpc.client">
+<em class="property">class </em><tt class="descclassname">amqp_shrapnel.rpc.</tt><tt class="descname">client</tt><big>(</big><em>channel</em>, <em>queue=''</em>, <em>uuid_fun=&lt;function uuid1 at 0x102ab9b90&gt;</em><big>)</big><a class="headerlink" href="#amqp_shrapnel.rpc.client" title="Permalink to this definition">¶</a></dt>
+<dd><p>Create a new RPC client for <em>channel</em>.</p>
+<dl class="docutils">
+<dt><em>queue</em>: optional argument.  If not supplied, an</dt>
+<dd>anonymous/exclusive queue is created automatically.</dd>
+<dt><em>uuid_fun</em>: a function for generating UUID&#8217;s for use as correlation-ids.</dt>
+<dd>If not supplied, defaults to uuid.uuid1.</dd>
+</dl>
+<dl class="method">
+<dt id="amqp_shrapnel.rpc.client.call">
+<tt class="descname">call</tt><big>(</big><em>properties</em>, <em>payload</em>, <em>exchange</em>, <em>routing_key</em><big>)</big><a class="headerlink" href="#amqp_shrapnel.rpc.client.call" title="Permalink to this definition">¶</a></dt>
+<dd><p>Make an RPC call.</p>
+<p><em>properties</em>: a properties dictionary (e.g. {&#8216;content-type&#8217;:&#8217;application/json&#8217;, ...})</p>
+<p><em>payload</em>: the data/argument to the rpc function.</p>
+<p><em>exchange</em>, <em>routing_key</em>: as with basic_publish.</p>
+</dd></dl>
+
+</dd></dl>
+
+<dl class="class">
+<dt id="amqp_shrapnel.rpc.server">
+<em class="property">class </em><tt class="descclassname">amqp_shrapnel.rpc.</tt><tt class="descname">server</tt><big>(</big><em>channel</em>, <em>queue</em>, <em>exchange</em><big>)</big><a class="headerlink" href="#amqp_shrapnel.rpc.server" title="Permalink to this definition">¶</a></dt>
+<dd></dd></dl>
+
+<p>Making an RPC call is easy:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">ch</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">channel</span><span class="p">()</span>
+<span class="n">rpc</span> <span class="o">=</span> <span class="n">amqp_shrapnel</span><span class="o">.</span><span class="n">rpc</span><span class="o">.</span><span class="n">client</span> <span class="p">(</span><span class="n">ch</span><span class="p">)</span>
+<span class="n">frame</span><span class="p">,</span> <span class="n">props</span><span class="p">,</span> <span class="n">reply</span> <span class="o">=</span> <span class="n">rpc</span><span class="o">.</span><span class="n">call</span> <span class="p">({},</span> <span class="s">&#39;19&#39;</span><span class="p">,</span> <span class="s">&#39;&#39;</span><span class="p">,</span> <span class="s">&#39;rpc_queue&#39;</span><span class="p">)</span>
+</pre></div>
+</div>
+<p>In the above example, the <em>properties</em> are empty, the <em>payload</em> is
+the string &#8216;19&#8217;, the <em>exchange</em> is set to the empty string (indicating
+to use the default exchange which sends message directly to a
+particular queue via...) and the <em>routing_key</em> is set to that queue.</p>
+<p>Various other rpc architectures are accommodated by passing in an
+already-created queue object:</p>
+<div class="highlight-python"><div class="highlight"><pre><span class="n">ch</span> <span class="o">=</span> <span class="n">c</span><span class="o">.</span><span class="n">channel</span><span class="p">()</span>
+<span class="n">queue</span> <span class="o">=</span> <span class="n">ch</span><span class="o">.</span><span class="n">queue_declare</span> <span class="p">(</span><span class="n">exclusive</span><span class="o">=</span><span class="bp">True</span><span class="p">)</span><span class="o">.</span><span class="n">queue</span>
+<span class="n">rpc</span> <span class="o">=</span> <span class="n">amqp_shrapnel</span><span class="o">.</span><span class="n">rpc</span><span class="o">.</span><span class="n">client</span> <span class="p">(</span><span class="n">ch</span><span class="p">,</span> <span class="n">queue</span><span class="p">)</span>
+<span class="n">ch</span><span class="o">.</span><span class="n">queue_bind</span> <span class="p">(</span><span class="n">queue</span><span class="o">=</span><span class="n">rpc</span><span class="o">.</span><span class="n">queue</span><span class="p">,</span> <span class="n">exchange</span><span class="o">=</span><span class="s">&#39;pumpkin.exchange&#39;</span><span class="p">,</span> <span class="n">routing_key</span><span class="o">=</span><span class="n">rpc</span><span class="o">.</span><span class="n">queue</span><span class="p">)</span>
+<span class="n">frame</span><span class="p">,</span> <span class="n">props</span><span class="p">,</span> <span class="n">reply</span> <span class="o">=</span> <span class="n">rpc</span><span class="o">.</span><span class="n">call</span> <span class="p">(</span>
+    <span class="p">{</span><span class="s">&#39;content-type&#39;</span><span class="p">:</span><span class="s">&#39;application/json&#39;</span><span class="p">,</span> <span class="s">&#39;delivery-mode&#39;</span><span class="p">:</span><span class="mi">2</span><span class="p">},</span>
+    <span class="n">json</span><span class="o">.</span><span class="n">dumps</span> <span class="p">({</span><span class="s">&#39;GetPumpkinData&#39;</span> <span class="p">:{}}),</span>
+    <span class="n">exchange</span><span class="o">=</span><span class="s">&#39;pumpkin.exchange&#39;</span><span class="p">,</span>
+    <span class="n">routing_key</span><span class="o">=</span><span class="s">&#39;request&#39;</span>
+    <span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="section" id="internals">
+<h2>Internals<a class="headerlink" href="#internals" title="Permalink to this headline">¶</a></h2>
+<p>Taking a cue from <a class="reference external" href="http://pika.github.com/">Pika</a>, the majority of the wire protocol is handled
+by code that is autogenerated from the RabbitMQ machine-readable JSON
+specification.  The <cite>util/codegen.py</cite> script generates the file <cite>spec.py</cite>,
+which uses the <cite>wire.py</cite> module to encode and decode AMQP frame data.</p>
+<p>I plan to eventually rewrite the wire module and the code generator
+to emit Cython rather than Python, which should make AMQP/Shrapnel run
+at near-C speeds.</p>
+</div>
+</div>
+<div class="section" id="indices-and-tables">
+<h1>Indices and tables<a class="headerlink" href="#indices-and-tables" title="Permalink to this headline">¶</a></h1>
+<ul class="simple">
+<li><a class="reference internal" href="genindex.html"><em>Index</em></a></li>
+<li><a class="reference internal" href="py-modindex.html"><em>Module Index</em></a></li>
+<li><a class="reference internal" href="search.html"><em>Search Page</em></a></li>
+</ul>
+</div>
+
+
+          </div>
+        </div>
+      </div>
+      <div class="sphinxsidebar">
+        <div class="sphinxsidebarwrapper">
+  <h3><a href="#">Table Of Contents</a></h3>
+  <ul>
+<li><a class="reference internal" href="#">Shrapnel/AMQP</a><ul>
+<li><a class="reference internal" href="#installing">Installing</a></li>
+<li><a class="reference internal" href="#using">Using</a></li>
+<li><a class="reference internal" href="#module-amqp_shrapnel.amqp">AMQP</a></li>
+<li><a class="reference internal" href="#module-amqp_shrapnel.rpc">RPC</a></li>
+<li><a class="reference internal" href="#internals">Internals</a></li>
+</ul>
+</li>
+<li><a class="reference internal" href="#indices-and-tables">Indices and tables</a></li>
+</ul>
+
+  <h3>This Page</h3>
+  <ul class="this-page-menu">
+    <li><a href="_sources/index.txt"
+           rel="nofollow">Show Source</a></li>
+  </ul>
+<div id="searchbox" style="display: none">
+  <h3>Quick search</h3>
+    <form class="search" action="search.html" method="get">
+      <input type="text" name="q" />
+      <input type="submit" value="Go" />
+      <input type="hidden" name="check_keywords" value="yes" />
+      <input type="hidden" name="area" value="default" />
+    </form>
+    <p class="searchtip" style="font-size: 90%">
+    Enter search terms or a module, class or function name.
+    </p>
+</div>
+<script type="text/javascript">$('#searchbox').show(0);</script>
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="related">
+      <h3>Navigation</h3>
+      <ul>
+        <li class="right" style="margin-right: 10px">
+          <a href="genindex.html" title="General Index"
+             >index</a></li>
+        <li class="right" >
+          <a href="py-modindex.html" title="Python Module Index"
+             >modules</a> |</li>
+        <li><a href="#">Shrapnel/AMQP 0.5 documentation</a> &raquo;</li> 
+      </ul>
+    </div>
+    <div class="footer">
+        &copy; Copyright 2012, Sam Rushing.
+      Created using <a href="http://sphinx.pocoo.org/">Sphinx</a> 1.1.2.
+    </div>
+  </body>
+</html>
