@@ -24,8 +24,31 @@ notifications, etc..
 Installing
 ----------
 
-[working on pip/github install]
+First, install shrapnel.  Although we are working on getting 'pip
+install' to work, it's not quite there yet, so just use git clone and
+run setup yourself::
 
+  $ git clone git://github.com/ironport/shrapnel.git
+  $ cd shrapnel
+  $ python setup.py build
+  $ sudo python setup.py install
+
+Installing shrapnel/amqp::
+
+  $ pip install shrapnel_amqp
+
+If that fails, try::
+
+  $ pip install --no-deps shrapnel_amqp
+
+Using
+-----
+Check out the examples in the `test` directory, they show how the
+client is used within the shrapnel event loop paradigm.  Remember to
+always run within a thread/coroutine -i.e., you can't use this
+library from the command line!  [an exception to this is to use the
+'back door' facility which lets you telnet into a python command line,
+very useful for debugging].
 
 AMQP
 -----
