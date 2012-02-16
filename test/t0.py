@@ -31,35 +31,19 @@ import amqp_shrapnel
 #   >>>
 #
 
-# XXX rethink this, build its behavior in?
-#   e.g., have pop() idempotently return None, or maybe raise an error?
-class consumer:
-
-    def __init__ (self, channel, fifo):
-        self.channel = channel
-        self.fifo = fifo
-
-    def pop (self):
-        probe = self.fifo.pop()
-        if probe is amqp_shrapnel.connection_closed:
-            self.fifo = None
-            print 'connection closed'
-        else:
-            frame, properties, data = probe
-            self.channel.basic_ack (frame.delivery_tag)
-            return properties, ''.join (data)
-
 def t0():
     c = amqp_shrapnel.client (('guest', 'guest'), '127.0.0.1', heartbeat=30)
     c.go()
     ch = c.channel()
     ch.exchange_declare (exchange='ething')
     ch.queue_declare (queue='qthing', passive=False, durable=False)
-    ch.queue_bind (exchange='ething', queue='qthing', routing_key='notification')
+    ch.queue_bind (exchange='ething', queue='qthing', routing_key='rpc')
     fifo = ch.basic_consume (queue='qthing')
-    return consumer (ch, fifo)
+    while 1:
+        print fifo.pop()
 
 if __name__ == '__main__':
     import coro.backdoor
     coro.spawn (coro.backdoor.serve, unix_path='/tmp/amqp.bd')
+    coro.spawn (t0)
     coro.event_loop()
