@@ -1,5 +1,8 @@
 # -*- Mode: Python -*-
 
+"""Provides an easy-to-use implementation of the AMQP 'RPC pattern' that should work for most situations.
+"""
+
 import coro
 import uuid
 import sys
@@ -51,6 +54,15 @@ class RPC_Client_Error (Exception):
 
 class client:
 
+    """Create a new RPC client for *channel*.
+
+    *queue*: optional argument.  If not supplied, an
+      anonymous/exclusive queue is created automatically.
+
+    *uuid_fun*: a function for generating UUID's for use as correlation-ids.
+      If not supplied, defaults to uuid.uuid1.
+    """
+
     def __init__ (self, channel, queue='', uuid_fun=uuid.uuid1):
         self.channel = channel
         if queue == '':
@@ -66,6 +78,14 @@ class client:
         self.consumer.cancel()
 
     def call (self, properties, payload, exchange, routing_key):
+        """Make an RPC call.
+
+        *properties*: a properties dictionary (e.g. {'content-type':'application/json', ...})
+
+        *payload*: the data/argument to the rpc function.
+
+        *exchange*, *routing_key*: as with basic_publish.
+        """
         correlation_id = str (self.uuid_fun())
         properties['correlation-id'] = correlation_id
         properties['reply-to'] = self.queue
