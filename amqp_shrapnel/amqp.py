@@ -1,5 +1,9 @@
 # -*- Mode: Python -*-
 
+"""
+Implements the AMQP protocol for Shrapnel.
+"""
+
 import struct
 import coro
 import spec
@@ -26,6 +30,20 @@ def dump_ob (ob):
 connection_closed = 'connection closed'
 
 class client:
+
+    """*auth*: is a tuple of (username, password) for the 'PLAIN' authentication mechanism.
+
+       *host*: string - IP address of the server.
+
+       *port*: int -  TCP port number
+
+       *virtual_host*: string - specifies which 'virtual host' to connect to.
+
+       *heartbeat*: int - whether to request heartbeat mode from the
+        server.  A value of 0 indicates no heartbeat wanted.  Any
+        other value specifies the number of seconds of idle time from
+        either side before a heartbeat frame is sent.
+    """
 
     version = [0,0,9,1]
     buffer_size = 4000
@@ -69,6 +87,7 @@ class client:
     #                     / S:CLOSE C:CLOSE-OK
 
     def go (self):
+        "Connect to the server.  Spawns a new thread to monitor the connection."
         self.s = coro.tcp_sock()
         self.s.connect ((self.host, self.port))
         self.s.send ('AMQP' + struct.pack ('>BBBB', *self.version))
@@ -116,6 +135,7 @@ class client:
             ftype, channel, frame = self.expect_frame (spec.FRAME_METHOD, 'connection.open_ok')
 
     def expect_frame (self, ftype, *names):
+        "read/expect a frame from the list *names*"
         ftype, channel, frame = self.frames.pop()
         if frame._name not in names:
             raise ProtocolError ("expected %r frame, got %r" % (names, frame._name))
@@ -218,6 +238,7 @@ class client:
             raise ProtocolError ("unhandled frame type: %r" % (ftype,))
 
     def send_frame (self, ftype, channel, ob):
+        "send a frame of type *ftype* on this channel.  *ob* is a frame object built by the <spec> module"
         f = []
         if ftype == spec.FRAME_METHOD:
             payload = struct.pack ('>hh', *ob.id) + ob.pack()
@@ -231,6 +252,7 @@ class client:
         #W ('>>> send_frame: %r %d\n' % (frame, r))
 
     def close (self, reply_code=200, reply_text='normal shutdown', class_id=0, method_id=0):
+        "http://www.rabbitmq.com/amqp-0-9-1-reference.html#connection.close"
         # close any open channels first.
         self.notify_channels_of_close()
         self.send_frame (
@@ -240,6 +262,10 @@ class client:
         ftype, channel, frame = self.expect_frame (spec.FRAME_METHOD, 'connection.close_ok')
 
     def channel (self, out_of_band=''):
+        """Create a new channel on this connection.
+        
+        http://www.rabbitmq.com/amqp-0-9-1-reference.html#connection.channel
+        """
         chan = channel (self)
         self.send_frame (spec.FRAME_METHOD, chan.num, spec.channel.open (out_of_band))
         ftype, chan_num, frame = self.expect_frame (spec.FRAME_METHOD, 'channel.open_ok')
@@ -256,6 +282,15 @@ class client:
             ch.notify_of_close()
 
 class channel:
+
+    """*conn*: the connection object this channel resides on.
+
+    The channel object presents the main interface to the user, exposing most of the 'methods'
+      of AMQP, including the 'basic' and 'channel' methods.
+
+    A connection may have multiple channels.
+    
+    """
 
     # state diagram for channel objects:
     #
@@ -287,6 +322,7 @@ class channel:
 
     def exchange_declare (self, exchange=None, type='direct', passive=False,
                           durable=False, auto_delete=False, internal=False, nowait=False, arguments={}):
+        "http://www.rabbitmq.com/amqp-0-9-1-reference.html#exchange.declare"
         frame = spec.exchange.declare (0, exchange, type, passive, durable, auto_delete, internal, nowait, arguments)
         self.send_frame (spec.FRAME_METHOD, frame)
         if not nowait:
@@ -296,6 +332,7 @@ class channel:
 
     def queue_declare (self, queue='', passive=False, durable=False,
                        exclusive=False, auto_delete=False, nowait=False, arguments={}):
+        "http://www.rabbitmq.com/amqp-0-9-1-reference.html#queue.declare"
         frame = spec.queue.declare (0, queue, passive, durable, exclusive, auto_delete, nowait, arguments)
         self.send_frame (spec.FRAME_METHOD, frame)
         if not nowait:
@@ -304,6 +341,7 @@ class channel:
             return frame
 
     def queue_bind (self, queue='', exchange=None, routing_key='', nowait=False, arguments={}):
+        "http://www.rabbitmq.com/amqp-0-9-1-reference.html#queue.bind"
         frame = spec.queue.bind (0, queue, exchange, routing_key, nowait, arguments)
         self.send_frame (spec.FRAME_METHOD, frame)
         if not nowait:
@@ -313,6 +351,12 @@ class channel:
 
     def basic_consume (self, queue='', consumer_tag='', no_local=False,
                        no_ack=False, exclusive=False, arguments={}):
+        """Start consuming messages from *queue*.
+
+        Returns a new :class:consumer object which spawns a new thread to monitor incoming messages.
+
+        http://www.rabbitmq.com/amqp-0-9-1-reference.html#basic.consume
+        """
         # we do not allow 'nowait' since that precludes us from establishing a consumer fifo.
         frame = spec.basic.consume (0, queue, consumer_tag, no_local, no_ack, exclusive, False, arguments)
         self.send_frame (spec.FRAME_METHOD, frame)
@@ -323,6 +367,7 @@ class channel:
         return con0
 
     def basic_cancel (self, consumer_tag='', nowait=False):
+        "http://www.rabbitmq.com/amqp-0-9-1-reference.html#basic.cancel"
         frame = spec.basic.cancel (consumer_tag, nowait)
         self.send_frame (spec.FRAME_METHOD, frame)
         if not nowait:
@@ -330,6 +375,7 @@ class channel:
         self.forget_consumer (consumer_tag)
 
     def basic_get (self, queue='', no_ack=False):
+        "http://www.rabbitmq.com/amqp-0-9-1-reference.html#basic.get"
         frame = spec.basic.get (0, queue, no_ack)
         self.send_frame (spec.FRAME_METHOD, frame)
         ftype, channel, frame = self.conn.expect_frame (spec.FRAME_METHOD, 'basic.get_ok', 'basic.empty')
@@ -337,6 +383,7 @@ class channel:
         return frame
 
     def basic_publish (self, payload, exchange='', routing_key='', mandatory=False, immediate=False, properties=None):
+        "http://www.rabbitmq.com/amqp-0-9-1-reference.html#basic.publish"
         frame = spec.basic.publish (0, exchange, routing_key, mandatory, immediate)
         self.send_frame (spec.FRAME_METHOD, frame)
         class_id = spec.basic.publish.id[0] # 60
@@ -357,6 +404,7 @@ class channel:
             self.conn.expect_frame (spec.FRAME_METHOD, 'basic.ack')
 
     def basic_ack (self, delivery_tag=0, multiple=False):
+        "http://www.rabbitmq.com/amqp-0-9-1-reference.html#basic.ack"
         frame = spec.basic.ack (delivery_tag, multiple)
         self.send_frame (spec.FRAME_METHOD, frame)
 
@@ -365,6 +413,7 @@ class channel:
         return frame
 
     def close (self, reply_code=0, reply_text='normal shutdown', class_id=0, method_id=0):
+        "http://www.rabbitmq.com/amqp-0-9-1-reference.html#channel.close"
         frame = spec.channel.close (reply_code, reply_text, class_id, method_id)
         self.send_frame (spec.FRAME_METHOD, frame)
         ftype, channel, frame = self.conn.expect_frame (spec.FRAME_METHOD, 'channel.close_ok')
@@ -400,6 +449,7 @@ class channel:
 
     # rabbit mq extension
     def confirm_select (self, nowait=False):
+        "http://www.rabbitmq.com/amqp-0-9-1-reference.html#confirm.select"
         try:
             if self.conn.server_properties['capabilities']['publisher_confirms'] != True:
                 raise ProtocolError ("server capabilities says NO to publisher_confirms")
@@ -446,6 +496,13 @@ class AMQP_Consumer_Closed (Exception):
 
 class consumer:
 
+    """The consumer object manages the consumption of messages triggered by a call to basic.consume.
+
+    *channel*: the channel object delivering the messages.
+
+    *tag*: the unique consumer tag associated with the call to basic.consume
+    """
+
     def __init__ (self, channel, tag):
         self.channel = channel
         self.tag = tag
@@ -453,11 +510,13 @@ class consumer:
         self.closed = False
 
     def close (self):
+        "close this consumer channel"
         self.fifo.push (connection_closed)
         self.closed = True
         self.channel.forget_consumer (self)
 
     def cancel (self):
+        "cancel the basic.consume() call that created this consumer"
         self.closed = True
         self.channel.basic_cancel (self.tag)
 
@@ -465,6 +524,7 @@ class consumer:
         self.fifo.push (value)
 
     def pop (self, ack=True):
+        "pop a new value from this consumer.  Will block if no value is available."
         if self.closed:
             raise AMQP_Consumer_Closed
         else:
