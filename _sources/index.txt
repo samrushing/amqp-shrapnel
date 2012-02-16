@@ -28,7 +28,7 @@ First, install shrapnel.  Although we are working on getting 'pip
 install' to work, it's not quite there yet, so just use git clone and
 run setup yourself::
 
-  $ git clone git@github.com:ironport/shrapnel.git
+  $ git clone git://github.com/ironport/shrapnel.git
   $ cd shrapnel
   $ python setup.py build
   $ sudo python setup.py install
