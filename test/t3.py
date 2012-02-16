@@ -18,9 +18,7 @@ def t3():
     for i in range (10):
         props = {'content-type':'raw goodness', 'message-id' : 'msg_%d' % (i,)}
         ch.basic_publish ('howdy there!', exchange='ething', routing_key='notification', properties=props)
-        print 'sent'
-        ch.get_ack()
-        print 'confirmed'
+        print 'sent/confirmed'
         coro.sleep_relative (1)
     coro.set_exit()
 
