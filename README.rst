@@ -11,6 +11,10 @@ Implements version 0.9.1 of the protocol.  The basics are there:
 channels, queues, exchanges, basic_publish, basic_consume.  Tested
 against RabbitMQ_.
 
+Recently added: heartbeats, a `consumer` class that simplifies the
+receiving of messages, and classes for rpc servers and clients.
+
+
 Implementation
 --------------
 Most of the code is auto-generated from the RabbitMQ_ machine-readable
