@@ -11,10 +11,6 @@ Implements version 0.9.1 of the protocol.  The basics are there:
 channels, queues, exchanges, basic_publish, basic_consume.  Tested
 against RabbitMQ_.
 
-Interesting: I noticed the official AMQP site is trying to bury evidence
-of previous versions of the protocol to force people into implementing 1.0.
-Wow, pretty stupid, guys.
-
 Implementation
 --------------
 Most of the code is auto-generated from the RabbitMQ_ machine-readable
