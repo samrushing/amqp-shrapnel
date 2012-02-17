@@ -14,6 +14,11 @@ against RabbitMQ_.
 Recently added: heartbeats, a `consumer` class that simplifies the
 receiving of messages, and classes for rpc servers and clients.
 
+Documentation
+-------------
+
+Preliminary documentation is available at http://samrushing.github.com/amqp-shrapnel/
+
 
 Implementation
 --------------
