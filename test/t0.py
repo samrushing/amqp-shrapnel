@@ -1,12 +1,17 @@
 # -*- Mode: Python -*-
 
+import coro
 import amqp_shrapnel
+
+from coro.log import Facility
+
+LOG = Facility ('consumer')
 
 # how to run this test:
 
 # 1) run this script.  it will print something like this:
 #   $ /usr/local/bin/python test/t0.py
-#   2: Tue Jan 10 12:18:32 2012 Backdoor started on unix socket /tmp/amqp.bd
+#
 # 2) Now, in another window run either t1.py (uses amqplib) or t2.py (uses this library):
 #
 #   $ python test/t2.py
@@ -15,20 +20,23 @@ import amqp_shrapnel
 #
 #   In the first window you should see the message show up.
 
+# set this to see AMQP protocol-level info.
+debug = False
+
 def t0():
     c = amqp_shrapnel.client (('guest', 'guest'), '127.0.0.1', heartbeat=30)
+    c.debug = debug
     c.go()
     ch = c.channel()
     ch.exchange_declare (exchange='ething')
     ch.queue_declare (queue='qthing', passive=False, durable=False)
-    ch.queue_bind (exchange='ething', queue='qthing', routing_key='rpc')
+    ch.queue_bind (exchange='ething', queue='qthing', routing_key='notification')
     fifo = ch.basic_consume (queue='qthing')
     while 1:
-        print 'waiting...'
-        print fifo.pop()
+        LOG ('waiting')
+        msg = fifo.pop()
+        LOG ('msg', repr(msg))
 
 if __name__ == '__main__':
-    import coro.backdoor
-    coro.spawn (coro.backdoor.serve, unix_path='/tmp/amqp.bd')
     coro.spawn (t0)
     coro.event_loop()
