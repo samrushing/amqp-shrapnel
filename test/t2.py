@@ -3,14 +3,18 @@
 
 import amqp_shrapnel
 
+# set this to see AMQP protocol-level info.
+debug = False
+
 def t2():
     global c
     c = amqp_shrapnel.client (('guest', 'guest'), '127.0.0.1')
+    c.debug = debug
     c.go() # i.e., connect...
     ch = c.channel()
-    ch.basic_publish ('howdy there!', exchange='ething', routing_key='notification')
-    print 'published!'
-    coro.sleep_relative (5)
+    for i in range (10):
+        ch.basic_publish ('howdy %d' % (i,), exchange='ething', routing_key='notification')
+        coro.sleep_relative (5)
     coro.set_exit()
 
 import coro
