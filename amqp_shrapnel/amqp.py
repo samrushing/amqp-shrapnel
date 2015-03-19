@@ -10,14 +10,22 @@ import spec
 import rpc
 import sys
 
+from coro.log import Facility
+
+LOG = Facility ('amqp')
+
 from pprint import pprint as pp
 is_a = isinstance
 
 W = sys.stderr.write
 
-class ProtocolError (Exception):
+class AMQPError (Exception):
     pass
-class UnexpectedClose (Exception):
+class ProtocolError (AMQPError):
+    pass
+class UnexpectedClose (AMQPError):
+    pass
+class AuthenticationError (AMQPError):
     pass
 
 def dump_ob (ob):
@@ -170,9 +178,13 @@ class client:
             self.closed_cv.wake_all()
             self.s.close()
 
+    debug = True
+
     def unpack_frame (self):
         # unpack the frame sitting in self.buffer
         ftype, chan, size = struct.unpack ('>BHL', self.buffer[:7])
+        if self.debug:
+            LOG ('frame', ftype, chan, size)
         #W ('<<< frame: ftype=%r channel=%r size=%d\n' % (ftype, chan, size))
         if size + 8 <= len(self.buffer) and self.buffer[7+size] == '\xce':
             # we have the whole frame
@@ -197,6 +209,8 @@ class client:
             cm_id = struct.unpack ('>hh', payload[:4])
             ob = spec.method_map[cm_id]()
             ob.unpack (payload, 4)
+            if self.debug:
+                LOG ('ob', repr(ob))
             #W ('<<< ')
             #dump_ob (ob)
             # catch asynchronous stuff here and ship it out...
@@ -263,7 +277,7 @@ class client:
 
     def channel (self, out_of_band=''):
         """Create a new channel on this connection.
-        
+
         http://www.rabbitmq.com/amqp-0-9-1-reference.html#connection.channel
         """
         chan = channel (self)
@@ -289,7 +303,7 @@ class channel:
       of AMQP, including the 'basic' and 'channel' methods.
 
     A connection may have multiple channels.
-    
+
     """
 
     # state diagram for channel objects:
@@ -301,7 +315,7 @@ class channel:
     #                     / functional-class
     # close-channel       = C:CLOSE S:CLOSE-OK
     #                     / S:CLOSE C:CLOSE-OK
-    
+
     counter = 1
     ack_discards = True
 
@@ -311,7 +325,7 @@ class channel:
         self.confirm_mode = False
         self.consumers = {}
         channel.counter += 1
-        
+
     def send_frame (self, ftype, frame):
         self.conn.send_frame (ftype, self.num, frame)
 
