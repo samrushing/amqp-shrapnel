@@ -10,6 +10,7 @@ def t2():
     ch = c.channel()
     ch.basic_publish ('howdy there!', exchange='ething', routing_key='notification')
     print 'published!'
+    coro.sleep_relative (5)
     coro.set_exit()
 
 import coro
