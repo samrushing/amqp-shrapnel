@@ -64,6 +64,9 @@ class client:
             }
         }
 
+    # whether to log protocol-level info.
+    debug = False
+
     def __init__ (self, auth, host, port=5672, virtual_host='/', heartbeat=0):
         self.port = port
         self.host = host
@@ -178,8 +181,6 @@ class client:
             self.closed_cv.wake_all()
             self.s.close()
 
-    debug = True
-
     def unpack_frame (self):
         # unpack the frame sitting in self.buffer
         ftype, chan, size = struct.unpack ('>BHL', self.buffer[:7])
@@ -210,7 +211,7 @@ class client:
             ob = spec.method_map[cm_id]()
             ob.unpack (payload, 4)
             if self.debug:
-                LOG ('ob', repr(ob))
+                LOG ('<<<', 'method', repr(ob))
             #W ('<<< ')
             #dump_ob (ob)
             # catch asynchronous stuff here and ship it out...
@@ -226,6 +227,8 @@ class client:
             cid, weight, size, flags = struct.unpack ('>hhqH', payload[:14])
             #W ('<<< HEADER: cid=%d weight=%d size=%d flags=%x payload=%r\n' % (cid, weight, size, flags, payload))
             #W ('<<< self.buffer=%r\n' % (self.buffer,))
+            if self.debug:
+                LOG ('<<<', 'header', repr(payload))
             if flags:
                 self.next_properties = unpack_properties (flags, payload[14:])
             else:
@@ -235,6 +238,8 @@ class client:
             #W ('<<< FRAME_BODY, len(payload)=%d\n' % (len(payload),))
             self.remain -= len (payload)
             self.body.append (payload)
+            if self.debug:
+                LOG ('<<<', 'body', repr(payload))
             if self.remain == 0:
                 if self.next_content_consumer is not None:
                     ob, ch = self.next_content_consumer
@@ -246,8 +251,12 @@ class client:
                 self.body = []
         elif ftype == spec.FRAME_HEARTBEAT:
             #W ('<<< FRAME_HEARTBEAT\n')
+            if self.debug:
+                LOG ('<<<', 'heartbeat')
             pass
         else:
+            if self.debug:
+                LOG ('<<<', 'unexpected', ftype)
             self.close (505, "unexpected frame type: %r" % (ftype,))
             raise ProtocolError ("unhandled frame type: %r" % (ftype,))
 
@@ -263,6 +272,8 @@ class client:
         frame = struct.pack ('>BHL', ftype, channel, len (payload)) + payload + chr(spec.FRAME_END)
         self.s.send (frame)
         self.last_send = coro.now
+        if self.debug:
+            LOG ('>>>', repr(ob))
         #W ('>>> send_frame: %r %d\n' % (frame, r))
 
     def close (self, reply_code=200, reply_text='normal shutdown', class_id=0, method_id=0):
