@@ -1,4 +1,9 @@
 
+NOTE
+====
+
+This code was merged into Shrapnel_ (as ``coro.amqp``) in Mar 2015.
+
 AMQP/Shrapnel
 ======
 
